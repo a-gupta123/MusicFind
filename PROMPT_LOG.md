@@ -313,3 +313,130 @@ The first production deploy finished in a few seconds with framework preset Othe
 The extracted model was then copied from the local Chroma cache into `data/models/all-MiniLM-L6-v2/onnx/` (87 MB, not committed). `prepare_embedding_cache` uses that directory when `model.onnx` is present, and the temporary copy skips `data/models`. The next build reported a 448.63 MB bundle, optimized it, and became READY. Deployment `findmusic-b5006a81x-aryang200612-2335s-projects.vercel.app`: the same piano query returned Letter from My Heart — Udo Vismann, distance 0.3543497323989868, label “Find on Spotify”, notice null.
 
 The project’s SSO setting was `all_except_custom_domains`, so the `.vercel.app` URL asks for a Vercel login unless the caller has a protection bypass. Git auto-deploy was not connected. A deploy from GitHub alone would omit `data/`, including the collection and the model.
+
+## 2026-10-26 — Stage 6: full-flow check
+
+Model: Grok 4.7, in Cursor.
+
+### Prompt
+
+```
+Build the next phase
+```
+
+### What was checked
+
+No new feature was added. Two separate `uvicorn` processes served `http://127.0.0.1:8000` against `data/chroma`. The first process started at 706 songs. The checks were HTTP requests to that server.
+
+First process:
+
+- `GET /api/health` returned `ready=true`, `count=706`, `persistent=true`.
+- `slow solo piano with reverb` returned Letter from My Heart — Udo Vismann first, distance 0.35434991121292114, match `semantic`, label “Find on Spotify”, `spotify_verified=false`, href `https://open.spotify.com/search/Letter%20from%20My%20Heart%20Udo%20Vismann`.
+- `Songs with a similar atmosphere to Frank Ocean` returned demons asleep — Fresh Body Shop first, distance 0.4890635013580322, with the notice that the main words do not appear in the closest stored description.
+- `Letter from My Heart` returned that title first as match `exact`, notice null, and an explanation starting “The title and artist match your search.” The response contained 6 results: the exact card plus five semantic cards.
+- A blank search returned 400: “Enter a description of what you want to hear.”
+- A description shorter than 20 characters returned 400: “Write a descriptive paragraph of at least 20 characters.”
+- An empty title returned 400: “Title is required.”
+- `https://open.spotify.com/search/test` returned 400 and was not stored.
+- Adding Harbor Lantern — Stage Six, description “A foggy harbor lantern waltz with muted nylon guitar, soft rain, and no vocals.”, tags `guitar, rain`, and `https://open.spotify.com/intl-us/track/11dFghVXANMlKmJXsNCbNl?si=abc` returned 200, id `user-c5895fe044a73cd9`, `spotify_verified=true`. The stored href was the canonical `https://open.spotify.com/track/11dFghVXANMlKmJXsNCbNl`.
+- The same title and artist in lowercase returned 409: “A song with this title and artist is already stored.”
+- Adding Paper Window — Stage Six, description “A dry paper-window guitar sketch with room hiss and no drums, meant for late reading.”, tag `guitar`, and no Spotify URL returned 200, id `user-622ff63d00297da6`, `spotify_verified=false`.
+- Searching `foggy harbor lantern waltz with muted nylon guitar` returned Harbor Lantern first, distance 0.16001862287521362, label “Open in Spotify”.
+- Searching `Paper Window Stage Six` returned Paper Window first, match `exact`, notice null, label “Find on Spotify”, href `https://open.spotify.com/search/Paper%20Window%20Stage%20Six`.
+- Health then reported `count=708`.
+
+The first process was stopped. A second process reported health `count=708`, `persistent=true`. The harbor query again returned `user-c5895fe044a73cd9` first at distance 0.16001862287521362 with the same canonical track URL. `Paper Window Stage Six` again returned `user-622ff63d00297da6` as an exact match with the search link.
+
+The server was then stopped and those two records were deleted. The collection count returned to 706. `Songs with a similar atmosphere to Frank Ocean` again returned jamendo-73153, demons asleep — Fresh Body Shop, distance 0.4890635013580322.
+
+## 2026-10-26 — Question about progress
+
+Model: Grok 4.7, in Cursor.
+
+### Prompt
+
+```
+What phase have you built up to?
+```
+
+Answered in the chat: through stage 6. No files were changed for this message.
+
+## 2026-10-26 — Stage 7: submission materials
+
+Model: Grok 4.7, in Cursor.
+
+### Prompt
+
+```
+Finish the final phase
+```
+
+### What was written
+
+`README.md` was rewritten from the finished app. It now has the run command, what text is embedded, the Song Describer citation, the Spotify link rules, the stage 6 add-and-restart check, and the hosted URL with its limits. The personal explanation section was left blank.
+
+The two assignment queries were run again in this stage against the 706-song collection, after the stage 6 test songs had been removed.
+
+`songs that make me drowsy`
+
+- 0.4772822856903076, jamendo-1169710, Ravel, M.: Pavane pour un infante defunte, M. 19 — OnClassical.
+- Stored text: “This instrumental song is so calm that makes me feel sleepy,” plus classical and piano tags.
+- `songs` and `drowsy` do not occur as substrings. `make` occurs inside “makes.” `that` and `me` occur as words.
+
+`quiet background music for reading`
+
+- 0.5124635100364685, jamendo-344323, Childhood — Alexander Stamenkovic.
+- Stored text: “Relaxing music played mostly on the piano that can be used while studying, meditating or just relaxing.”
+- `quiet`, `background`, and `reading` do not occur as substrings. `music` does.
+
+No commit or push was made in this stage.
+
+## 2026-10-26 — Artist-name search and longer result lists
+
+Model: Grok 4.7, in Cursor.
+
+### Prompt
+
+```
+Fix this issue: when I search singing drake, it doesn't show me drake songs that involve him singing. I want this general principle to be found in my app where i can search up using an artist name. Also give more than 5 songs for each search. 
+
+I only want this to show if there physically does not exist any songs that are even close to the description, it is showing this for a search like "carti", which should show up playboi carti: No close match in the collection. These are only the nearest stored description.
+```
+
+### What changed
+
+`findmusic/retrieve.py` now treats a distinctive artist-name token, or the full artist name, as a match and lists that artist’s songs first. A leftover description such as “singing” ranks those songs. Semantic searches return 12 songs. An artist with at least five stored songs is listed without unrelated songs after them, up to 20. “No close match in the collection” is shown only when no name matched and the nearest distance is at least 0.70.
+
+Checked against the 706-song collection:
+
+- `singing jill`, `jill`, and `zimmerman` each returned 9 Jill Zimmerman songs and no notice. The first `singing jill` hit was Show Me — Jill Zimmerman, distance 0.495.
+- `Fresh Body Shop` returned 20 songs, all by Fresh Body Shop, and no notice.
+- `slow solo piano with reverb` still returned Letter from My Heart — Udo Vismann first, distance about 0.354, with 12 songs and no notice.
+- `Letter from My Heart` was still an exact title match, with 13 songs and no notice.
+- The stored artist and title fields contain no Playboi Carti and no Drake. The only “drake” string is the title Drake2 by Cartel. `carti` returned 12 unrelated songs. The nearest distance was about 0.728, Be Here (ft. Derrius Dean) — Jemex, and the no-close-match notice was shown. `singing drake` returned 12 songs and did not include a Drake artist.
+
+## 2026-10-26 — Question about a larger collection
+
+Model: Grok 4.7, in Cursor.
+
+### Prompt
+
+The message included a screenshot of a search for “chill drake” that showed 5 songs and the no-close-match notice. The typed prompt was:
+
+```
+why can't you use a very extensive collection so it has way more artists and songs.
+```
+
+Answered in the chat. The collection was not replaced. Drake is not in the Song Describer set, and no files were changed for this message.
+
+## 2026-10-26 — Prompt log copied to GitHub
+
+Model: Grok 4.7, in Cursor.
+
+### Prompt
+
+```
+put my entire exact prompt log in PROMPT_LOG.md in the github
+```
+
+The prompts above are the typed messages from this project, in order, copied from the chat. System notifications are not included. This file was then pushed to `https://github.com/a-gupta123/MusicFind.git`.
