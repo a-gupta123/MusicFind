@@ -1,12 +1,12 @@
 # FindMusic
 
-A small music discovery app for a vector-database project. This repository currently contains stage 2: a persistent local Chroma collection loaded with a 40-track sample. Search, song addition, and the web interface are not built yet.
+A small music discovery app for a vector-database project. Search and adding a song go through a FastAPI backend and a single web page. The songs live in a local Chroma collection.
 
 Personal assignment reflections are intentionally not written in this file.
 
 ## Source data
 
-The sample comes from the Song Describer Dataset, CC BY-SA 4.0:
+The corpus comes from the Song Describer Dataset, CC BY-SA 4.0:
 
 Manco, I., Weck, B., Bogdanov, D., Tovstogan, P., & Won, M. (2023). *Song Describer Dataset* (Version 1.0.0) [Dataset]. Zenodo. https://doi.org/10.5281/zenodo.10072001
 
@@ -23,8 +23,11 @@ Developed with Python 3.13.3 and ChromaDB 1.5.9. Embeddings use Chroma’s built
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python scripts/load_sample.py
-.venv/bin/python scripts/query_sample.py
+.venv/bin/uvicorn findmusic.web:app --app-dir .
 ```
 
-`load_sample.py` can be run again. It upserts the same Jamendo ids, so the collection count stays at 40. `query_sample.py` only reads the collection.
+Open http://127.0.0.1:8000. The server loads all 706 tracks into `data/chroma` on first use if they are not already there. Added songs are written to that same collection.
+
+`scripts/load_corpus.py` can load the corpus ahead of time. It upserts in batches of 100 and keeps the same ids when run again. `scripts/evaluate_queries.py` and `scripts/query_sample.py` only read the collection.
+
+Vercel can host the FastAPI app, but a function can write only to temporary storage. On that host, added songs last until the instance stops. A local run keeps them.

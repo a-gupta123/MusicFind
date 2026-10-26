@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FindMusic</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <p class="name">FindMusic</p>
+      <p class="lede">Search songs by mood, instruments, genre, or the situation you want to hear.</p>
+    </div>
+    <button type="button" class="text-button" id="open-add">Add a song</button>
+  </header>
+
+  <main>
+    <form id="search-form" role="search">
+      <label for="query">Describe what you want to hear</label>
+      <div class="search-row">
+        <input id="query" name="q" type="search" autocomplete="off" required
+          placeholder="Dreamy late-night music with soft vocals and lots of reverb">
+        <button type="submit" id="search-button">Search</button>
+      </div>
+    </form>
+
+    <div class="examples" aria-label="Example searches">
+      <button type="button">Jazz piano for studying on a rainy afternoon</button>
+      <button type="button">Energetic guitar music for walking to class</button>
+      <button type="button">Melancholy instrumental music that gradually builds</button>
+      <button type="button">Songs with a similar atmosphere to Frank Ocean</button>
+    </div>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <p id="notice" class="notice" hidden></p>
+    <ol id="results" class="results"></ol>
+  </main>
+
+  <footer>
+    <p>Descriptions come from the Song Describer Dataset, CC BY-SA 4.0. Recommendations quote stored text and do not analyze audio.</p>
+    <p id="persistence" hidden>Songs added here last only until this server instance stops. A local run keeps them in the Chroma collection.</p>
+  </footer>
+
+  <dialog id="add-dialog" aria-labelledby="add-title">
+    <form id="add-form">
+      <div class="dialog-heading">
+        <h2 id="add-title">Add a song</h2>
+        <button type="button" class="text-button" id="close-add">Close</button>
+      </div>
+      <label for="title">Title</label>
+      <input id="title" name="title" required maxlength="200">
+      <label for="artist">Artist</label>
+      <input id="artist" name="artist" required maxlength="200">
+      <label for="description">Description</label>
+      <textarea id="description" name="description" required maxlength="4000" rows="5"
+        placeholder="A short paragraph about the mood, instruments, and how the song feels."></textarea>
+      <label for="tags">Tags <span class="optional">optional</span></label>
+      <input id="tags" name="tags" maxlength="300" placeholder="piano, jazz, rainy">
+      <label for="spotify">Spotify track URL <span class="optional">optional</span></label>
+      <input id="spotify" name="spotify_url" type="url" maxlength="300"
+        placeholder="https://open.spotify.com/track/...">
+      <p id="add-error" class="error" role="alert" hidden></p>
+      <button type="submit" id="add-button">Save song</button>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

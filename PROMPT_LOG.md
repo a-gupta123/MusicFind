@@ -176,3 +176,120 @@ ONNX Runtime printed a warning on the later processes: it failed to persist a te
 No web API or interface was added.
 
 The local branch was renamed from `master` to `main` and pushed to `https://github.com/a-gupta123/MusicFind.git`. `git ls-remote` showed `refs/heads/main` at `63016290cf62b57d5fd14b6fa31d293ef2aa67a7`. The GitHub API reported the repository as public with default branch `main` before that push. Raw data, the Chroma directory, and `.venv` were not committed.
+
+## 2026-10-26 — Stage 3: full corpus import and search evaluation
+
+Model: Grok 4.7, in Cursor.
+
+### Prompt
+
+```
+build the next stage
+```
+
+### Import
+
+`scripts/load_corpus.py` upserts all parsed tracks in batches of 100, using the same record ids as stage 2. A tokenizer check before the upsert reported `documents_truncated_at_256_tokens=0` for all 706 documents. The padding length is 256, so the check used `overflowing`, which is empty unless text is cut off.
+
+First process, starting from the 40-track sample:
+
+- `corpus_tracks=706`
+- `count_before=40`
+- batch counts after each upsert: 105, 204, 304, 404, 500, 600, 700, 706
+- `count_after=706`
+
+The first batches grew by less than 100 because some of those ids were already in the sample and were updated rather than inserted.
+
+Second process:
+
+- `count_before=706`
+- every batch left `count=706`
+- `count_after=706`
+
+No web API or interface was added. This stage was not pushed to GitHub.
+
+### Queries
+
+`scripts/evaluate_queries.py` was run against the 706-record collection. It prints Chroma cosine distance, lower is closer, and which query words of four or more characters occur in the stored document. These are the top hits.
+
+`Dreamy late-night music with soft vocals and lots of reverb`
+
+1. 0.3740, Letter from My Heart — Udo Vismann. Stored text: “slow and arpeggiated solo piano with a boatload of reverb,” tags include dream, relaxing, and soft. The words dreamy, late, night, and vocals are absent. This is solo piano, not soft vocals.
+2. 0.3785, 07_FrenchLAB_Reverie — FrenchLAB. “reverb-heavy” cinematic strings, piano, and guitar.
+3. 0.4107, Upper Class Groupie — STEEP. The stored text says “vocals but no reverb,” so the word reverb is present as a negation.
+
+`Jazz piano for studying on a rainy afternoon`
+
+1. 0.4940, To my brothers — Gustavo Crochenci. Stored text describes a jazzy piano with bass. afternoon, rainy, and studying are absent.
+2. 0.5220, TIC TAC — LES PÊCHEURS DE LUNE. A jazz track “for a pleasant time during lunch,” not piano-led.
+
+`Songs with a similar atmosphere to Frank Ocean`
+
+1. 0.4891, demons asleep — Fresh Body Shop. “murky, underwater sound with panicked vocals.” frank and ocean are absent. The distances of the top five are between 0.4891 and 0.5121. This is a weak match.
+
+`Energetic guitar music for walking to class`
+
+1. 0.4136, Particule — Silence. “A slow paced arty electronic track that features a strange tuned guitar.” energetic, walking, and class are absent. The next guitar hits are also slow or calm. The top results do not support the energetic-walking part.
+
+`Melancholy instrumental music that gradually builds`
+
+1. 0.2975, Winter Dreams — Vladimir Sterzer. “a melancholic piano solo piece without any dynamic.” instrumental is present. builds, gradually, and melancholy are absent. The caption supports a sad instrumental piano and says the piece is without dynamic change.
+2. 0.3578, First Tear — Dave Imbernön. “Sad instrumental piano song.”
+
+`slow solo piano with reverb` still returns Letter from My Heart — Udo Vismann first, distance 0.3543, the same top id as on the 40-track sample.
+
+These paraphrase attempts did not retrieve a clearly relevant top record: “a keyboard piece that sounds like it was recorded in a large empty room” (top distance 0.5453, Better Man — Steven Dunston, “bedroom recording of a guitar”), “wordless music that grows heavier as it goes on” (top distance 0.4724, Downtime — March Rosetta, “Haunting expansive sound as if you are in space”), and “spacious echoing keyboard” (top distance 0.6713).
+
+### Two queries with important words absent from the top document
+
+Checked after the run, including as substrings.
+
+`songs that make me drowsy`
+
+1. 0.4773, Ravel, M.: Pavane pour un infante defunte, M. 19 — OnClassical. Stored text: “This instrumental song is so calm that makes me feel sleepy,” plus classical and piano tags. `drowsy` and `songs` do not occur, including as substrings. `make` occurs inside “makes.” `that` occurs as a word. The relevant link is “feel sleepy,” not the word drowsy.
+
+`quiet background music for reading`
+
+1. 0.5125, Childhood — Alexander Stamenkovic. Stored text: “Relaxing music played mostly on the piano that can be used while studying, meditating or just relaxing.” `quiet`, `background`, and `reading` do not occur, including as substrings. `music` does occur. The stored use is studying, meditating, or relaxing.
+
+`music to drift off to sleep` returns the same Ravel track first, distance 0.4487. `music` and `drift` do not occur as substrings. `sleep` occurs only inside “sleepy.”
+
+## 2026-10-26 — Stage 4 and 5: search API, add-song API, and the page
+
+Model: Grok 4.7, in Cursor.
+
+### Prompt
+
+```
+https://github.com/a-gupta123/MusicFind.git
+
+yes here is the github repo, push everything to this. Also host the site on vercel
+
+build the next phase
+```
+
+### What was added
+
+Search and adding a song go through FastAPI in `findmusic/web.py`. The page is `static/index.html` with `static/styles.css` and `static/app.js`. `GET /api/search` returns up to five cards. `POST /api/songs` stores a user song in the same Chroma collection. Explanations quote stored text. A Spotify track URL is stored only when it matches `https://open.spotify.com/track/{22-character id}`; other values are rejected. Corpus songs keep a “Find on Spotify” search link.
+
+`fastapi==0.162.0` was installed into `.venv`. That install also brought Starlette 1.10.0. `uvicorn==0.54.0` was already installed. Before the install, `import fastapi` failed.
+
+### Checks that ran
+
+FastAPI `TestClient`, outside the sandbox, against the existing 706-song collection:
+
+- `GET /api/health` returned `ready=true`, `count=706`, `persistent=true`.
+- `slow solo piano with reverb` returned Letter from My Heart — Udo Vismann first, distance 0.35434991121292114, label “Find on Spotify”, `spotify_verified=false`, href `https://open.spotify.com/search/Letter%20from%20My%20Heart%20Udo%20Vismann`.
+- `Letter from My Heart` was marked an exact title match.
+- `Songs with a similar atmosphere to Frank Ocean` returned demons asleep first at distance 0.4890635013580322, with the notice that the main words do not appear in the closest stored description.
+- A description shorter than 20 characters returned 400: “Write a descriptive paragraph of at least 20 characters.”
+- `https://open.spotify.com/search/test` returned 400 and was not stored.
+- Adding “Glass Harbor” by “Cursor Test” with description “A hushed harbor ballad with glassy electric piano, foghorn drones, and almost no drums.”, tags `piano, fog`, and `https://open.spotify.com/track/11dFghVXANMlKmJXsNCbNl` returned 200, id `user-f049415f87c7cdc6`, `spotify_verified=true`. The same title and artist with different case returned 409. A following search returned that song with the label “Open in Spotify”. The count became 707.
+
+In the browser at http://127.0.0.1:8000, the example “Jazz piano for studying on a rainy afternoon” rendered five cards. The first was To my brothers — Gustavo Crochenci, with the stored sentence “A jazzy piano is playing in the foreground.” and a “Find on Spotify” link. The first attempt at that search returned a plain-text 500. The server process was sandboxed, the ONNX cache looked unwritable, and the model download failed with `httpx.ProxyError: 403 Forbidden`. `prepare_embedding_cache` was changed so an existing `model.onnx` stays in use. After restarting the server outside the sandbox, the same example search succeeded.
+
+The add form was then submitted as Lantern Rain — Ada North, description “A quiet lantern-lit piano loop with soft rain and no vocals, meant for late reading.”, tags `piano, rain`. The page searched `Lantern Rain Ada North` and listed that song first. That search also showed “No close match” because the title embedding was far from the caption. `retrieve.py` now marks an exact title or artist match as exact and does not show the weak-match notice for it. A later request for `Lantern Rain Ada North` returned `notice=null`, match `exact`, and the explanation starting “The title and artist match your search.” The Frank Ocean query still returned the weak-match notice.
+
+Those two test songs were then deleted: `user-f049415f87c7cdc6` and `user-3e7cc37835df5639`. The count returned to 706. `Songs with a similar atmosphere to Frank Ocean` again returned jamendo-73153, demons asleep — Fresh Body Shop, distance 0.4890635013580322.
+
+Hosting on Vercel was requested in this prompt. The deployment result is recorded after it finishes. Added songs on Vercel are stored only in temporary instance storage.
