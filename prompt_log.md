@@ -1,6 +1,6 @@
 # Prompt log
 
-Factual record of this project. Elapsed times are omitted because they were not measured. Results below are only what was actually retrieved or computed.
+I used Grok 4.7 in Cursor for the code, the debugging, and the checks in this log. I used that tool because I was building the app in Cursor, and I wanted to finish one stage and check it before I moved to the next stage, rather than try to build the whole app in one prompt. The app does not call a language model. Chroma's local all-MiniLM-L6-v2 model creates the embeddings, and the explanations on the page are quotes from the stored captions. I did not measure elapsed time, so I have not written any hours below. The sections are the work from choosing the data through the checks that were actually run.
 
 ## 2026-10-25 — Stage 1: architecture and data inspection
 

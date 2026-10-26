@@ -27,7 +27,52 @@ STOP_WORDS = {
     "have",
     "want",
 }
-RESULT_LIMIT = 5
+RESULT_LIMIT = 12
+ARTIST_CAP = 20
+# Only warn when the nearest song is far from the query. A name match is a real hit.
+NO_CLOSE_DISTANCE = 0.70
+GENERIC_NAME_WORDS = STOP_WORDS | {
+    "music",
+    "production",
+    "records",
+    "record",
+    "band",
+    "project",
+    "sound",
+    "sounds",
+    "blues",
+    "rock",
+    "jazz",
+    "soul",
+    "folk",
+    "piano",
+    "guitar",
+    "vocal",
+    "vocals",
+    "singing",
+    "singer",
+    "fresh",
+    "love",
+    "king",
+    "play",
+    "girl",
+    "shop",
+    "body",
+    "beat",
+    "feat",
+    "featuring",
+    "cool",
+    "high",
+    "real",
+    "soft",
+    "slow",
+    "hard",
+    "deep",
+    "warm",
+    "dark",
+    "male",
+    "female",
+}
 
 
 def search_songs(collection: Collection, query: str) -> dict[str, Any]:
@@ -48,25 +93,10 @@ def search_songs(collection: Collection, query: str) -> dict[str, Any]:
         query_texts=[text],
         n_results=min(RESULT_LIMIT, total),
     )
-    semantic = []
-    for record_id, distance, metadata, document in zip(
-        found["ids"][0],
-        found["distances"][0],
-        found["metadatas"][0],
-        found["documents"][0],
-    ):
-        semantic.append(
-            _card(
-                record_id=record_id,
-                metadata=metadata,
-                document=document,
-                distance=float(distance),
-                match="semantic",
-                query=text,
-            )
-        )
-
-    results = _merge_exact(collection, text, semantic)
+    semantic = _cards_from_query(found, text, "semantic")
+    stored = collection.get(include=["metadatas", "documents"], limit=total)
+    artist_matches = _artist_matches(collection, text, stored)
+    results = _merge_named(text, stored, artist_matches, semantic)
     results = _promote_exact(text, results)
     notice = _notice(text, results)
     return {
@@ -77,27 +107,146 @@ def search_songs(collection: Collection, query: str) -> dict[str, Any]:
     }
 
 
-def _merge_exact(
+def _cards_from_query(found: dict[str, Any], query: str, match: str) -> list[dict[str, Any]]:
+    cards = []
+    ids = found.get("ids") or [[]]
+    distances = found.get("distances") or [[]]
+    metadatas = found.get("metadatas") or [[]]
+    documents = found.get("documents") or [[]]
+    if not ids or not ids[0]:
+        return cards
+    for record_id, distance, metadata, document in zip(
+        ids[0],
+        distances[0],
+        metadatas[0],
+        documents[0],
+    ):
+        if metadata is None:
+            continue
+        cards.append(
+            _card(
+                record_id=record_id,
+                metadata=metadata,
+                document=document or "",
+                distance=float(distance),
+                match=match,
+                query=query,
+            )
+        )
+    return cards
+
+
+def _artist_matches(
     collection: Collection,
     query: str,
+    stored: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Songs whose artist name, or a distinctive part of it, appears in the query."""
+    groups = _group_by_artist(stored)
+    query_tokens = {
+        word
+        for word in WORD.findall(query.casefold())
+        if len(word) >= 4 and word not in GENERIC_NAME_WORDS
+    }
+    query_norm = _norm(query)
+    matched = []
+    for artist, group in groups.items():
+        artist_norm = _norm(artist)
+        phrase = bool(artist_norm) and f" {artist_norm} " in f" {query_norm} "
+        tokens = group["tokens"] & query_tokens
+        if phrase or tokens:
+            used = set(WORD.findall(artist.casefold())) if phrase else tokens
+            matched.append((artist, used))
+    if not matched:
+        return []
+
+    ranked = []
+    for artist, used_tokens in matched:
+        remainder = _remainder(query, used_tokens)
+        ranked.extend(_songs_for_artist(collection, query, artist, remainder, groups[artist]["count"]))
+    ranked.sort(key=lambda card: (card["distance"] is None, card["distance"] if card["distance"] is not None else 0))
+    deduped = []
+    seen = set()
+    for card in ranked:
+        if card["id"] in seen:
+            continue
+        seen.add(card["id"])
+        deduped.append(card)
+    return deduped[:ARTIST_CAP]
+
+
+def _group_by_artist(stored: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for metadata in stored.get("metadatas") or []:
+        if metadata is None:
+            continue
+        artist = str(metadata.get("artist") or "")
+        if not artist.strip():
+            continue
+        group = groups.setdefault(artist, {"tokens": set(), "count": 0})
+        group["count"] += 1
+        group["tokens"].update(
+            word
+            for word in WORD.findall(artist.casefold())
+            if len(word) >= 4 and word not in GENERIC_NAME_WORDS
+        )
+    return groups
+
+
+def _remainder(query: str, artist_tokens: set[str]) -> str:
+    words = [word for word in WORD.findall(query) if word.casefold() not in artist_tokens]
+    return " ".join(words)
+
+
+def _songs_for_artist(
+    collection: Collection,
+    query: str,
+    artist: str,
+    remainder: str,
+    count: int,
+) -> list[dict[str, Any]]:
+    probe = remainder if len(remainder) >= 3 else query
+    found = collection.query(
+        query_texts=[probe],
+        n_results=min(ARTIST_CAP, count),
+        where={"artist": artist},
+    )
+    return _cards_from_query(found, query, "artist")
+
+
+def _merge_named(
+    query: str,
+    stored: dict[str, Any],
+    artist_matches: list[dict[str, Any]],
     semantic: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    exact = _exact_cards(query, stored, {card["id"] for card in artist_matches})
+    if artist_matches:
+        if len(artist_matches) >= 5:
+            return exact + artist_matches
+        seen = {card["id"] for card in exact + artist_matches}
+        filler = [card for card in semantic if card["id"] not in seen]
+        return (exact + artist_matches + filler)[:RESULT_LIMIT]
+    return exact + semantic
+
+
+def _exact_cards(
+    query: str,
+    stored: dict[str, Any],
+    skip: set[str],
 ) -> list[dict[str, Any]]:
     needle = _norm(query)
     if len(needle) < 2:
-        return semantic
-
-    stored = collection.get(include=["metadatas", "documents"], limit=collection.count())
-    seen = {card["id"] for card in semantic}
+        return []
     exact = []
     ids = stored.get("ids") or []
     metadatas = stored.get("metadatas") or []
     documents = stored.get("documents") or []
     for record_id, metadata, document in zip(ids, metadatas, documents):
-        if metadata is None or record_id in seen:
+        if metadata is None or record_id in skip:
             continue
         names = {
             _norm(str(metadata.get("title", ""))),
-            _norm(str(metadata.get("artist", ""))),
             _norm(f"{metadata.get('title', '')} {metadata.get('artist', '')}"),
             _norm(f"{metadata.get('artist', '')} {metadata.get('title', '')}"),
         }
@@ -113,7 +262,7 @@ def _merge_exact(
                 query=query,
             )
         )
-    return exact + semantic
+    return exact
 
 
 def _promote_exact(query: str, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -123,7 +272,6 @@ def _promote_exact(query: str, results: list[dict[str, Any]]) -> list[dict[str, 
     for card in results:
         names = {
             _norm(card["title"]),
-            _norm(card["artist"]),
             _norm(f"{card['title']} {card['artist']}"),
             _norm(f"{card['artist']} {card['title']}"),
         }
@@ -167,10 +315,11 @@ def _card(
 
 
 def _explanation(query: str, document: str, match: str) -> str:
-    if match == "exact":
-        quote = _best_sentence(query, document)
-        return f"The title and artist match your search. Stored description: “{quote}”"
     quote = _best_sentence(query, document)
+    if match == "exact":
+        return f"The title and artist match your search. Stored description: “{quote}”"
+    if match == "artist":
+        return f"The artist name matches your search. Stored description: “{quote}”"
     return f"Stored description: “{quote}”"
 
 
@@ -190,15 +339,15 @@ def _best_sentence(query: str, document: str) -> str:
 
 
 def _notice(query: str, results: list[dict[str, Any]]) -> str | None:
-    if any(card["match"] == "exact" for card in results):
+    if any(card["match"] in {"exact", "artist"} for card in results):
         return None
-    semantic = [card for card in results if card["match"] == "semantic"]
+    semantic = [card for card in results if card["match"] == "semantic" and card["distance"] is not None]
     if not semantic:
         return None
-    best = semantic[0]
+    best = min(semantic, key=lambda card: card["distance"])
     distance = best["distance"]
     overlap = _content_words(query) & _content_words(best["explanation"])
-    if distance is not None and distance >= 0.60:
+    if distance is not None and distance >= NO_CLOSE_DISTANCE:
         return (
             "No close match in the collection. "
             "These are only the nearest stored descriptions."
