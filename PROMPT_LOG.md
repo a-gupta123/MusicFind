@@ -173,4 +173,6 @@ An extra query, `quiet background music for reading`, was run against this 40-tr
 
 ONNX Runtime printed a warning on the later processes: it failed to persist a telemetry device id and used an in-memory identifier. The queries still returned results.
 
-No web API or interface was added. GitHub push is recorded only if a later entry says it succeeded.
+No web API or interface was added.
+
+The local branch was renamed from `master` to `main` and pushed to `https://github.com/a-gupta123/MusicFind.git`. `git ls-remote` showed `refs/heads/main` at `63016290cf62b57d5fd14b6fa31d293ef2aa67a7`. The GitHub API reported the repository as public with default branch `main` before that push. Raw data, the Chroma directory, and `.venv` were not committed.
