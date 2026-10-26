@@ -95,6 +95,9 @@ def search(q: str = "") -> dict[str, object]:
             return search_songs(state["collection"], q)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("Search failed")
+        raise HTTPException(status_code=500, detail="Search failed.") from error
 
 
 @app.post("/api/songs")

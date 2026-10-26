@@ -39,6 +39,8 @@ def _copy_bundled_data(source: Path, dest: Path) -> None:
         return
     dest.mkdir(parents=True, exist_ok=True)
     for child in source.iterdir():
+        if child.name == "models":
+            continue
         target = dest / child.name
         if target.exists():
             continue
@@ -49,7 +51,11 @@ def _copy_bundled_data(source: Path, dest: Path) -> None:
 
 
 def prepare_embedding_cache() -> None:
-    """Keep a downloaded ONNX model, or choose a writable cache."""
+    """Use a bundled ONNX model when one is present, otherwise a writable cache."""
+    bundled = Path(__file__).resolve().parents[1] / "data" / "models" / ONNXMiniLM_L6_V2.MODEL_NAME
+    if (bundled / "onnx" / "model.onnx").exists():
+        ONNXMiniLM_L6_V2.DOWNLOAD_PATH = bundled
+        return
     cache = ONNXMiniLM_L6_V2.DOWNLOAD_PATH
     if (cache / "onnx" / "model.onnx").exists() or _can_write(cache):
         return

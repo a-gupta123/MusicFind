@@ -30,4 +30,4 @@ Open http://127.0.0.1:8000. The server loads all 706 tracks into `data/chroma` o
 
 `scripts/load_corpus.py` can load the corpus ahead of time. It upserts in batches of 100 and keeps the same ids when run again. `scripts/evaluate_queries.py` and `scripts/query_sample.py` only read the collection.
 
-Vercel can host the FastAPI app, but a function can write only to temporary storage. On that host, added songs last until the instance stops. A local run keeps them.
+The hosted app is at https://findmusic-one.vercel.app. A function can write only to temporary storage, so songs added there last until that instance stops. A local run keeps them in `data/chroma`. The live deploy also includes the local collection and the ONNX model from this machine. Those files stay out of Git.

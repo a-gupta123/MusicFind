@@ -292,4 +292,24 @@ The add form was then submitted as Lantern Rain — Ada North, description “A 
 
 Those two test songs were then deleted: `user-f049415f87c7cdc6` and `user-3e7cc37835df5639`. The count returned to 706. `Songs with a similar atmosphere to Frank Ocean` again returned jamendo-73153, demons asleep — Fresh Body Shop, distance 0.4890635013580322.
 
-Hosting on Vercel was requested in this prompt. The deployment result is recorded after it finishes. Added songs on Vercel are stored only in temporary instance storage.
+Hosting on Vercel was requested in this prompt. Added songs on Vercel are stored only in temporary instance storage.
+
+### GitHub
+
+`main` was pushed to `https://github.com/a-gupta123/MusicFind.git`. The commits in this push are `c541e1b` (search, add-song, and the page), `b17e80d` (read-only collection handling), and `665ef56` (`app.py` for Vercel). Raw data, `data/chroma`, the ONNX model, and `.venv` were not committed.
+
+### Vercel
+
+The Vercel CLI was logged in as `aryang200612-2335` on the hobby team `aryang200612-2335s-projects`. No FindMusic project existed. `vercel project create findmusic` created `prj_mrG2i9KxRVBZHTcJosH7oEMkye9d`, and the directory was linked to it.
+
+The first production deploy finished in a few seconds with framework preset Other and did not install Python. `vercel project update findmusic --framework fastapi` set the preset. `app.py` re-exports `findmusic.web:app`. The next build used Python 3.12 and uv. It reported `Bundle size (361.52 MB) exceeds the standard size; optimizing dependencies.` The deployment still became READY. Production alias: `https://findmusic-one.vercel.app`.
+
+`vercel curl` against that deployment:
+
+- `GET /` returned the FindMusic page, HTTP 200.
+- `GET /api/health` returned `{"ready":true,"count":706,"persistent":false}`.
+- `GET /api/search?q=slow+solo+piano+with+reverb` returned HTTP 500. The runtime log showed the ONNX archive downloading from `https://chroma-onnx-models.s3.amazonaws.com/all-MiniLM-L6-v2/onnx.tar.gz` (79.3 MB, HTTP 200). A following response body was `OSError: [Errno 28] No space left on device`. The function was unpacking that archive into `/tmp` after the collection had already been copied there.
+
+The extracted model was then copied from the local Chroma cache into `data/models/all-MiniLM-L6-v2/onnx/` (87 MB, not committed). `prepare_embedding_cache` uses that directory when `model.onnx` is present, and the temporary copy skips `data/models`. The next build reported a 448.63 MB bundle, optimized it, and became READY. Deployment `findmusic-b5006a81x-aryang200612-2335s-projects.vercel.app`: the same piano query returned Letter from My Heart — Udo Vismann, distance 0.3543497323989868, label “Find on Spotify”, notice null.
+
+The project’s SSO setting was `all_except_custom_domains`, so the `.vercel.app` URL asks for a Vercel login unless the caller has a protection bypass. Git auto-deploy was not connected. A deploy from GitHub alone would omit `data/`, including the collection and the model.
