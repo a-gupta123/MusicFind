@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
+
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
 
 from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2
 
@@ -25,8 +28,24 @@ def app_root() -> Path:
 
     fallback = Path("/tmp/findmusic")
     fallback.mkdir(parents=True, exist_ok=True)
+    _copy_bundled_data(root / "data", fallback / "data")
     os.environ["HOME"] = "/tmp"
     return fallback
+
+
+def _copy_bundled_data(source: Path, dest: Path) -> None:
+    """Copy a read-only deployment collection into writable temporary storage."""
+    if not source.is_dir():
+        return
+    dest.mkdir(parents=True, exist_ok=True)
+    for child in source.iterdir():
+        target = dest / child.name
+        if target.exists():
+            continue
+        if child.is_dir():
+            shutil.copytree(child, target)
+        elif child.is_file():
+            shutil.copy2(child, target)
 
 
 def prepare_embedding_cache() -> None:
